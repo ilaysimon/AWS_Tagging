@@ -3,6 +3,7 @@ import boto3
 from botocore.exceptions import ClientError
 import logging
 
+#Python script for tag ASG resource that are using manual scale (in all regions)
 
 def check_scaling_policies(list_ASG_names,ASG_client):
     ASG_manual = []
