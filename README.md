@@ -1,1 +1,1 @@
-# tag-all-ASG-that-are-using-manual-scale-
+# AWS tagging 
