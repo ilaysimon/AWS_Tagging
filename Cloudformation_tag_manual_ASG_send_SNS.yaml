@@ -1,0 +1,196 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Tag manual ASG and Send SNS (creat s3 and upload the python code before you create new stack)"
+
+Parameters:
+
+  ScheduleExpressionTag:
+    Default: rate(7 days)
+    Description: Enter CronSchedule to determine how often the lambda function will run
+    Type: String
+
+  WhereIsYourRegion:
+    Type: String
+    Default: "Enter your region where you creat the stack, for Example: us-east-1"
+    Description: Enter your region where you creat the stack.
+
+  CreateSnsTopic:
+    Type: String
+    Default: 'True'
+    AllowedValues:
+      - 'True'
+      - 'False'
+    Description: Do You want to create new SNS topic and subscription? if you have one and you want to use yours please answer False
+
+  EndpointSubscription:
+      Type: String
+      Default: 'your_email@gmail.com'
+      Description: Relevant if you want new Topic!! Enter your email to get SNS notification, else do nothing
+
+  ExistSnsTopicArn:
+      Type: String
+      Default: 'Enter exist topic ARN'
+      Description: Relevant if you have exist Topic and subscription!! Enter exist topic ARN, else do nothing
+
+Conditions:
+  CreateSnsTopicCondition:
+    'Fn::Equals':
+      - Ref: CreateSnsTopic
+      - 'True'
+
+Resources:
+  MySNSTopic:
+    Condition: CreateSnsTopicCondition
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      Subscription:
+      - Endpoint:
+          Ref: EndpointSubscription
+        Protocol: "email"
+      TopicName: "Tag_manual_ASG"
+
+  FunctionTestTagManualAsg:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Role:
+        'Fn::GetAtt':
+          - ilayTagManualAsgRole
+          - Arn
+      Code:
+        S3Bucket: ilay-tag-manual-asg
+        S3Key: lambda_function.py.zip
+      Environment:
+        Variables:
+          SNS_ARN_TOPIC:
+             !If [CreateSnsTopicCondition, !Ref MySNSTopic, !Ref ExistSnsTopicArn]
+          SNS_REGION:
+            Ref: WhereIsYourRegion
+      Runtime: python3.7
+      Timeout: 800
+      TracingConfig:
+        Mode: Active
+  TagManualAsgSchedule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: TagManualAsgSchedule
+      Description: Triggers a tag of manual asg
+      ScheduleExpression:
+        Ref: ScheduleExpressionTag
+      Targets:
+        - Id: TagManualAsgScheduleTarget
+          Arn:
+            'Fn::GetAtt':
+              - FunctionTestTagManualAsg
+              - Arn
+      State: ENABLED
+  TagManualAsgScheduleInvokeLambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName:
+        Ref: FunctionTestTagManualAsg
+      Action: 'lambda:InvokeFunction'
+      Principal: events.amazonaws.com
+      SourceArn:
+        'Fn::GetAtt':
+          - TagManualAsgSchedule
+          - Arn
+  ilayTagManualAsgRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: ilayTagManualAsgRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: AmazonSNSFullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Action:
+              - sns:*
+              Effect: Allow
+              Resource: "*"
+        - PolicyName: AWSLambdaBasicExecutionRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
+        - PolicyName: AutoScalingFullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 'autoscaling:*'
+                Resource: '*'
+              - Effect: Allow
+                Action: 'cloudwatch:PutMetricAlarm'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeAccountAttributes'
+                  - 'ec2:DescribeAvailabilityZones'
+                  - 'ec2:DescribeImages'
+                  - 'ec2:DescribeInstanceAttribute'
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:DescribeKeyPairs'
+                  - 'ec2:DescribeLaunchTemplateVersions'
+                  - 'ec2:DescribePlacementGroups'
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:DescribeSpotInstanceRequests'
+                  - 'ec2:DescribeSubnets'
+                  - 'ec2:DescribeVpcClassicLink'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'elasticloadbalancing:DescribeLoadBalancers'
+                  - 'elasticloadbalancing:DescribeTargetGroups'
+                Resource: '*'
+              - Effect: Allow
+                Action: 'iam:CreateServiceLinkedRole'
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'iam:AWSServiceName': autoscaling.amazonaws.com
+        - PolicyName: AWSCloudMapFullAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'route53:GetHostedZone'
+                  - 'route53:ListHostedZonesByName'
+                  - 'route53:CreateHostedZone'
+                  - 'route53:DeleteHostedZone'
+                  - 'route53:ChangeResourceRecordSets'
+                  - 'route53:CreateHealthCheck'
+                  - 'route53:GetHealthCheck'
+                  - 'route53:DeleteHealthCheck'
+                  - 'route53:UpdateHealthCheck'
+                  - 'ec2:DescribeVpcs'
+                  - 'ec2:DescribeRegions'
+                  - 'ec2:DescribeInstances'
+                  - 'servicediscovery:*'
+                Resource:
+                  - '*'
+        - PolicyName: AWSLambdaBasicExecutionRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: '*'
